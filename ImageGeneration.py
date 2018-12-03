@@ -80,13 +80,13 @@ class MarkovChain(object):
         """
         width, height = image.size
         image = np.array(image)[:, :, :3]
-        prog = pyprind.ProgBar(width * height * 2, title="Training", width=64, stream=1)
+        progress_bar = pyprind.ProgBar(width * height * 2, title="Training", width=64, stream=1)
 
         pixels = []
         for x in range(height):
             for y in range(width):
                 pixels.append(image[x, y])
-                prog.update()
+                progress_bar.update()
 
         self.set_normalize_alpha(pixels)
 
@@ -94,7 +94,7 @@ class MarkovChain(object):
             for y in range(width):
                 # get the left, right, top, bottom neighbour pixels
                 pix = tuple(self.normalize(image[x, y]))
-                prog.update()
+                progress_bar.update()
                 for neighbour in self.get_neighbours(x, y):
                     try:
                         self.weights[pix][tuple(self.normalize(image[neighbour]))] += 1
@@ -112,20 +112,20 @@ class MarkovChain(object):
         self.weights = defaultdict(lambda: defaultdict(Counter))
         width, height = image.size
         image = np.array(image)[:, :, :3]
-        prog = pyprind.ProgBar(width * height * 2, title="Training", width=64, stream=1)
+        progress_bar= pyprind.ProgBar(width * height * 2, title="Training", width=64, stream=1)
 
         pixels = []
         for x in range(height):
             for y in range(width):
                 pixels.append(image[x, y])
-                prog.update()
+                progress_bar.update()
 
         self.set_normalize_alpha(pixels)
 
         for x in range(height):
             for y in range(width):
                 pix = tuple(self.normalize(image[x, y]))
-                prog.update()
+                progress_bar.update()
                 for direction, neighbour in self.get_neighbours_direction(x, y).items():
                     try:
                         self.weights[pix][dir][tuple(self.normalize(image[neighbour]))] += 1
@@ -137,9 +137,9 @@ class MarkovChain(object):
 
     def generate(self, initial_state=None, width=512, height=512):
         pygame.init()
-        screen = pygame.display.set_mode((width, height))
         pygame.display.set_caption('Markov Image')
-        screen.fill((0, 0, 0))
+        surface = pygame.display.set_mode((width, height), 0, 8)
+        surface.fill((0, 0, 0))
 
         if initial_state is None:
             initial_state = random.choice(list(self.weights.keys()))
@@ -158,7 +158,7 @@ class MarkovChain(object):
         image[initial_position] = initial_state
         stack = [initial_position]
         coloured = set()
-        prog = pyprind.ProgBar(width * height, title="Generating", width=64, stream=1)
+        progress_bar= pyprind.ProgBar(width * height, title="Generating", width=64, stream=1)
 
         i = 0
         while stack:
@@ -176,21 +176,20 @@ class MarkovChain(object):
                 image_out[x, y] = (round(cpixel[0]).astype(np.uint8),
                                    round(cpixel[1]).astype(np.uint8), round(cpixel[2]).astype(np.uint8))
 
-                prog.update()
+                progress_bar.update()
 
-                # Update the display live every 128 iterations
+                # Update the display
                 i += 1
-                screen.set_at((x, y), image_out[x, y])
+                surface.set_at((x, y), image_out[x, y])
                 if i % 128 == 0:
                     pygame.display.flip()
-                    pass
 
             except IndexError:
                 continue
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    sys.exit()
+                    pygame.quit()
 
             if self.directional:
                 keys = {direction: list(node[direction].keys()) for direction in node}
