@@ -8,10 +8,11 @@ import sys
 
 
 class MarkovChain(object):
-    def __init__(self, direction=True):
+    def __init__(self, direction=True, animate=False):
         self.weights = defaultdict(Counter)
         self.directional = direction
         self.normalize_alpha = (1, 1, 1)
+        self.animate = animate
 
     def set_normalize_alpha(self, pixels):
         """Calculates the normalization constant alpha for each RGB component over this image.
@@ -132,10 +133,12 @@ class MarkovChain(object):
                         continue
 
     def generate(self, initial_state=None, width=512, height=512):
-        pygame.init()
-        pygame.display.set_caption('Markov Image')
-        surface = pygame.display.set_mode((width, height), 0, 8)
-        surface.fill((0, 0, 0))
+        surface = None
+        if self.animate:
+            pygame.init()
+            pygame.display.set_caption('Markov Image')
+            surface = pygame.display.set_mode((width, height), 0, 8)
+            surface.fill((0, 0, 0))
 
         if initial_state is None:
             initial_state = random.choice(list(self.weights.keys()))
@@ -176,17 +179,19 @@ class MarkovChain(object):
 
                 # Update the display
                 i += 1
-                surface.set_at((x, y), image_out[x, y])
-                if i % 128 == 0:
-                    pygame.display.flip()
+                if self.animate:
+                    surface.set_at((x, y), image_out[x, y])
+                    if i % 128 == 0:
+                        pygame.display.flip()
 
             except IndexError:
                 print("Failed to color pixel: (", x, ", ", y, ")")
                 continue
 
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
+            if self.animate:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
 
             if self.directional:
                 keys = {direction: list(node[direction].keys()) for direction in node}
@@ -229,7 +234,7 @@ class MarkovChain(object):
 
 
 if __name__ == "__main__":
-    chain = MarkovChain(direction=False)
+    chain = MarkovChain(direction=False, animate=False)
 
     file_names = ['test1.png']
     if len(sys.argv) > 1:
