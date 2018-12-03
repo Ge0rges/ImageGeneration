@@ -63,6 +63,7 @@ class MarkovChain(object):
         :param x X coordinate of the pixel
         :param y Y coordinate of the pixel
         :return The coordinates of (x, y)'s neighbour as a mapped dictionary"""
+
         return {'r': (x + 1, y),
                 'l': (x - 1, y),
                 'b': (x, y + 1),
@@ -100,18 +101,15 @@ class MarkovChain(object):
                     except IndexError:
                         continue
 
-        self.directional = False
-
     def train_direction(self, image):
         """
         Train on the input PIL image with direction.
         :param image: The input image
         """
-
         self.weights = defaultdict(lambda: defaultdict(Counter))
         width, height = image.size
         image = np.array(image)[:, :, :3]
-        progress_bar= pyprind.ProgBar(width * height * 2, title="Training", width=64, stream=1)
+        progress_bar = pyprind.ProgBar(width * height * 2, title="Training", width=64, stream=1)
 
         pixels = []
         for x in range(height):
@@ -125,14 +123,13 @@ class MarkovChain(object):
             for y in range(width):
                 pix = tuple(self.normalize(image[x, y]))
                 progress_bar.update()
+
                 for direction, neighbour in self.get_neighbours_direction(x, y).items():
                     try:
-                        self.weights[pix][dir][tuple(self.normalize(image[neighbour]))] += 1
+                        self.weights[pix][direction][tuple(self.normalize(image[neighbour]))] += 1
 
                     except IndexError:
                         continue
-
-        self.directional = True
 
     def generate(self, initial_state=None, width=512, height=512):
         pygame.init()
@@ -184,6 +181,7 @@ class MarkovChain(object):
                     pygame.display.flip()
 
             except IndexError:
+                print("Failed to color pixel: (", x, ", ", y, ")")
                 continue
 
             for event in pygame.event.get():
