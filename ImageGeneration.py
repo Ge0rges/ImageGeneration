@@ -5,140 +5,200 @@ import pyprind
 import random
 import os
 import pygame
-import cv2
 import sys
 
 
 class MarkovChain(object):
-    def __init__(self, bucket_size=10, four_neighbour=True, direction=True):
+    def __init__(self, direction=True):
         self.weights = defaultdict(Counter)
-        self.bucket_size = bucket_size
-        self.four_neighbour = four_neighbour
         self.directional = direction
+        self.normalize_alpha = (1, 1, 1)
+
+    def set_normalize_alpha(self, pixels):
+        """Calculates the normalization constant alpha for each RGB component over this image.
+        Sets it in self.normalize_alpha.
+        :param pixels A list of pixels (r, g, b)
+        """
+
+        sum_r = 0
+        sum_g = 0
+        sum_b = 0
+
+        for r, g, b in pixels:
+            sum_r += r
+            sum_g += g
+            sum_b += b
+
+        self.normalize_alpha = (sum_r, sum_g, sum_b)
 
     def normalize(self, pixel):
-        return pixel // self.bucket_size
+        """ Divides each pixel's RGB values by the scalar to normalize the distribution.
+        :param pixel A pixel (r, g, b)
+        :return A normalized pixel (r, g, b)
+        """
+
+        return (pixel[0] / self.normalize_alpha[0],
+                pixel[1] / self.normalize_alpha[1],
+                pixel[2] / self.normalize_alpha[2])
 
     def denormalize(self, pixel):
-        return pixel * self.bucket_size
+        """ Multiplies each pixel's RGB values by the scalar to denormalize the distribution.
+        :param pixel A pixel (r, g, b)
+        :return A denormalized pixel (r, g, b)
+        """
+        return (pixel[0] * self.normalize_alpha[0],
+                pixel[1] * self.normalize_alpha[1],
+                pixel[2] * self.normalize_alpha[2])
 
     def get_neighbours(self, x, y):
-        if self.four_neighbour:
-            return [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
-        else:
-            return [(x + 1, y),
-                    (x - 1, y),
-                    (x, y + 1),
-                    (x, y - 1),
-                    (x + 1, y + 1),
-                    (x - 1, y - 1),
-                    (x - 1, y + 1),
-                    (x + 1, y - 1)]
+        """Returns the 8 coordinates for each neighbour of the pixel at (x, y).
+        :param x X coordinate of the pixel
+        :param y Y coordinate of the pixel
+        :return The coordinates of (x, y)'s neighbour in a list"""
+        return [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1),
+                (x + 1, y + 1), (x - 1, y - 1), (x - 1, y + 1), (x + 1, y - 1)]
 
-    def get_neighbours_dir(self, x, y):
-        if self.four_neighbour:
-            return {'r': (x + 1, y), 'l': (x - 1, y), 'b': (x, y + 1), 't': (x, y - 1)}
-        else:
-            return dict(zip(['r', 'l', 'b', 't', 'br', 'tl', 'tr', 'bl'],
-                            [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1),
-                             (x + 1, y + 1), (x - 1, y - 1),(x - 1, y + 1),(x + 1, y - 1)]))
+    def get_neighbours_direction(self, x, y):
+        """Returns the 8 coordinates for each neighbour of the pixel at (x, y) in a dictionary matching each coordinate
+        to the direction relative to the pixel.
+        :param x X coordinate of the pixel
+        :param y Y coordinate of the pixel
+        :return The coordinates of (x, y)'s neighbour as a mapped dictionary"""
+        return {'r': (x + 1, y),
+                'l': (x - 1, y),
+                'b': (x, y + 1),
+                't': (x, y - 1),
+                'br': (x + 1, y + 1),
+                'tl': (x - 1, y - 1),
+                'tr': (x - 1, y + 1),
+                'bl': (x + 1, y - 1)}
 
-    def train(self, img):
+    def train(self, image):
         """
         Train on the input PIL image
-        :param img:
-        :return:
+        :param image: The input image
         """
-        width, height = img.size
-        img = np.array(img)[:, :, :3]
-        prog = pyprind.ProgBar((width * height), width=64, stream=1)
+        width, height = image.size
+        image = np.array(image)[:, :, :3]
+        prog = pyprind.ProgBar(width * height * 2, title="Training", width=64, stream=1)
+
+        pixels = []
+        for x in range(height):
+            for y in range(width):
+                pixels.append(image[x, y])
+                prog.update()
+
+        self.set_normalize_alpha(pixels)
+
         for x in range(height):
             for y in range(width):
                 # get the left, right, top, bottom neighbour pixels
-                pix = tuple(self.normalize(img[x, y]))
+                pix = tuple(self.normalize(image[x, y]))
                 prog.update()
                 for neighbour in self.get_neighbours(x, y):
                     try:
-                        self.weights[pix][tuple(self.normalize(img[neighbour]))] += 1
+                        self.weights[pix][tuple(self.normalize(image[neighbour]))] += 1
                     except IndexError:
                         continue
+
         self.directional = False
 
-    def train_direction(self, img):
+    def train_direction(self, image):
+        """
+        Train on the input PIL image with direction.
+        :param image: The input image
+        """
+
         self.weights = defaultdict(lambda: defaultdict(Counter))
-        width, height = img.size
-        img = np.array(img)[:, :, :3]
-        prog = pyprind.ProgBar((width * height), width=64, stream=1)
+        width, height = image.size
+        image = np.array(image)[:, :, :3]
+        prog = pyprind.ProgBar(width * height * 2, title="Training", width=64, stream=1)
+
+        pixels = []
         for x in range(height):
             for y in range(width):
-                pix = tuple(self.normalize(img[x, y]))
+                pixels.append(image[x, y])
                 prog.update()
-                for dir, neighbour in self.get_neighbours_dir(x, y).items():
+
+        self.set_normalize_alpha(pixels)
+
+        for x in range(height):
+            for y in range(width):
+                pix = tuple(self.normalize(image[x, y]))
+                prog.update()
+                for direction, neighbour in self.get_neighbours_direction(x, y).items():
                     try:
-                        self.weights[pix][dir][tuple(self.normalize(img[neighbour]))] += 1
+                        self.weights[pix][dir][tuple(self.normalize(image[neighbour]))] += 1
+
                     except IndexError:
                         continue
+
         self.directional = True
 
     def generate(self, initial_state=None, width=512, height=512):
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        writer = cv2.VideoWriter('markov_img.mp4', fourcc, 24, (width, height))
-        os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % (0, 0)
         pygame.init()
-
         screen = pygame.display.set_mode((width, height))
         pygame.display.set_caption('Markov Image')
         screen.fill((0, 0, 0))
 
         if initial_state is None:
             initial_state = random.choice(list(self.weights.keys()))
+
         if type(initial_state) is not tuple and len(initial_state) != 3:
             raise ValueError("Initial State must be a 3-tuple")
-        img = Image.new('RGB', (width, height), 'white')
-        img = np.array(img)
-        img_out = np.array(img.copy())
+
+        image = Image.new('RGB', (width, height), 'white')
+        image = np.array(image, dtype=np.double)
+        image_out = np.array(image.copy(), dtype=np.uint8)
 
         # start filling out the image
         # start at a random point on the image, set the neighbours and then move into a random, unchecked neighbour,
         # only filling in unmarked pixels
         initial_position = (np.random.randint(0, width), np.random.randint(0, height))
-        img[initial_position] = initial_state
+        image[initial_position] = initial_state
         stack = [initial_position]
         coloured = set()
+        prog = pyprind.ProgBar(width * height, title="Generating", width=64, stream=1)
+
         i = 0
-        prog = pyprind.ProgBar((width * height), width=64, stream=1)
-        # input()
         while stack:
             x, y = stack.pop()
             if (x, y) in coloured:
                 continue
             else:
                 coloured.add((x, y))
+
             try:
-                cpixel = img[x, y]
+                cpixel = image[x, y]
                 node = self.weights[tuple(cpixel)]  # a counter of neighbours
-                img_out[x, y] = self.denormalize(cpixel)
+
+                cpixel = self.denormalize(cpixel)
+                image_out[x, y] = (round(cpixel[0]).astype(np.uint8),
+                                   round(cpixel[1]).astype(np.uint8), round(cpixel[2]).astype(np.uint8))
+
                 prog.update()
+
+                # Update the display live every 128 iterations
                 i += 1
-                screen.set_at((x, y), img_out[x, y])
+                screen.set_at((x, y), image_out[x, y])
                 if i % 128 == 0:
                     pygame.display.flip()
-                    # writer.write(cv2.cvtColor(img_out, cv2.COLOR_RGB2BGR))
                     pass
+
             except IndexError:
                 continue
 
-            for e in pygame.event.get():
-                if e.type == pygame.QUIT:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
                     sys.exit()
 
-
             if self.directional:
-                keys = {dir: list(node[dir].keys()) for dir in node}
-                neighbours = self.get_neighbours_dir(x, y).items()
-                counts = {dir: np.array(list(node[dir].values()), dtype=np.float32) for dir in keys}
-                key_idxs = {dir: np.arange(len(node[dir])) for dir in keys}
-                ps = {dir: counts[dir] / counts[dir].sum() for dir in keys}
+                keys = {direction: list(node[direction].keys()) for direction in node}
+                neighbours = self.get_neighbours_direction(x, y).items()
+                counts = {direction: np.array(list(node[direction].values()), dtype=np.float32) for direction in keys}
+                key_idxs = {direction: np.arange(len(node[direction])) for direction in keys}
+                ps = {direction: counts[direction] / counts[direction].sum() for direction in keys}
+
             else:
                 keys = list(node.keys())
                 neighbours = self.get_neighbours(x, y)
@@ -154,38 +214,37 @@ class MarkovChain(object):
                         neighbour = neighbour[1]
                         if neighbour not in coloured:
                             col_idx = np.random.choice(key_idxs[direction], p=ps[direction])
-                            img[neighbour] = keys[direction][col_idx]
+                            image[neighbour] = keys[direction][col_idx]
                     else:
                         col_idx = np.random.choice(key_idxs, p=ps)
                         if neighbour not in coloured:
-                            img[neighbour] = keys[col_idx]
+                            image[neighbour] = keys[col_idx]
+
                 except IndexError:
                     pass
+
                 except ValueError:
                     continue
+
                 if 0 <= neighbour[0] < width and 0 <= neighbour[1] < height:
                     stack.append(neighbour)
-        writer.release()
-        return Image.fromarray(img_out)
+
+        return Image.fromarray(image_out)
 
 
 if __name__ == "__main__":
-    chain = MarkovChain(bucket_size=16, four_neighbour=False, direction=False)
+    chain = MarkovChain(direction=False)
 
     file_names = ['test1.png']
     if len(sys.argv) > 1:
         fnames = sys.argv[1:]
 
     for file_name in file_names:
-        im = Image.open(file_name)
-        # im.show()
-        print("Training " + file_name)
+        image = Image.open(file_name)
 
-        if chain.directional == True:
-            chain.train_direction(im)
+        if chain.directional:
+            chain.train_direction(image)
         else:
-            chain.train(im)
+            chain.train(image)
 
-    # print (chain.weights)
-    print("\nGenerating")
     chain.generate().show()
