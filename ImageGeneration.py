@@ -234,7 +234,7 @@ class MarkovChain(object):
 
 
 if __name__ == "__main__":
-    chain = MarkovChain(direction=False, animate=False)
+    chain = MarkovChain(direction=False, animate=True)
 
     file_names = ['test1.png']
     if len(sys.argv) > 1:
